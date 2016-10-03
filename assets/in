@@ -1,0 +1,67 @@
+#!/usr/bin/python
+"""
+    Given a multibranch version as "<branch_name>:sha ...". Get the first
+    branch/sha to a specified directory.
+
+    https://concourse.ci/implementing-resources.html#in-fetch-a-given-resource
+
+    - sys.argv[1] is the destination dir to fetch the repo to.
+    - payload is the source/params json dict
+
+    script basically does the following:
+    1. Load private key.
+    2. Clone the repo.
+    3. Output node metadata.
+
+"""
+import datetime
+import subprocess
+import sys
+import os
+import json
+
+from common import get_payload
+
+dest = sys.argv[1]
+payload = get_payload(sys.stdin)
+uri = payload['source']['uri']
+
+# 1. Setup ssh key.
+if 'private_key' in payload['source']:
+    with open('/root/.ssh/id_rsa', 'w') as f:
+        f.write(payload['source']['private_key'])
+    os.chmod('/root/.ssh/id_rsa', 0600)
+
+# 2. Clone the repo.
+branch_parts = payload['version']['ref'].split(" ")[0].split(":")
+branch_name = branch_parts[0]
+branch_rev = branch_parts[1]
+
+subprocess.check_call(
+    ['hg', 'clone', '-b', branch_name, '-u', branch_name, uri, dest],
+    stdout=2
+)
+
+# 3. Get metadata.
+hg = subprocess.Popen(
+    ['hg', '-R', dest, 'log', '--rev', 'tip', '-Tjson'],
+    stdout=subprocess.PIPE
+)
+commit_metadata = json.loads(hg.communicate()[0])[0]
+commit_date = str(datetime.datetime.fromtimestamp(commit_metadata["date"][0]))
+
+output = {
+  "version": payload['version'],
+  "metadata": [
+      {"name": "node", "value": commit_metadata["node"]},
+      {"name": "rev", "value": str(commit_metadata["rev"])},
+      {"name": "branch", "value": commit_metadata["branch"]},
+      {"name": "user", "value": commit_metadata["user"]},
+      {"name": "date", "value": commit_date},
+      {"name": "message", "value": commit_metadata["desc"]},
+      {"name": "tags", "value": ", ".join(commit_metadata["tags"])},
+
+  ]
+}
+
+print(json.dumps(output))

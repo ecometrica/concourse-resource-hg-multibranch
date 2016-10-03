@@ -1,0 +1,16 @@
+#!/usr/bin/python
+"""
+    We don't know how to push yet. Just return current version.
+"""
+import sys
+import json
+
+payload = json.load(sys.stdin)
+
+output = {
+    "version": {
+        "ref": payload['version']['ref']
+    }
+}
+
+print(json.dumps(output))

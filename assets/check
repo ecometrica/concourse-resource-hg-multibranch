@@ -1,0 +1,47 @@
+#!/usr/bin/python
+"""
+    Generates the multibranch version as "<branch_name>:sha ...".
+
+    https://concourse.ci/implementing-resources.html#resource-check
+
+    - payload is the source/params json dict
+
+    script basically does the following:
+    1. Load private key.
+    2. Clone the repo.
+    3. Get the current branches.
+    4. Get new versions. If version is empty, give back first (last) branch.
+
+"""
+import os
+import sys
+import json
+
+from common import update_repo, get_branches, get_versions, get_payload
+
+
+payload = get_payload(sys.stdin)
+dest = '/tmp/hg-resource-repo-cache'
+
+# 1. Setup ssh key.
+if 'private_key' in payload['source']:
+    with open('/root/.ssh/id_rsa', 'w') as f:
+        f.write(payload['source']['private_key'])
+    os.chmod('/root/.ssh/id_rsa', 0600)
+
+# 2. Clone
+update_repo(payload['source']['uri'], dest)
+
+# 3. Get current branches.
+current_branches = get_branches(dest)
+
+# 4. Get new version string.
+if payload['version'] is not None:
+    built_branches = payload['version']['ref'].split(" ")
+    versions = get_versions(built_branches, current_branches)
+
+    data = [{"ref": " ".join(versions)}]
+else:
+    data = [{"ref": current_branches[-1]}]
+
+print(json.dumps(data))
